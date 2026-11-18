@@ -1,0 +1,23 @@
+# 私有配置与密钥
+.env
+.env.*
+config.local.md
+config.local.env
+secrets/
+*.pem
+*.key
+
+# 运行产物与简历原件
+work/评分/
+work/推荐/
+inbox/*
+!inbox/README.md
+!inbox/done/
+!inbox/done/.keep
+*.pdf
+*.doc
+*.docx
+*.zip
+prompts/
+raw/
+*.prompt.txt
