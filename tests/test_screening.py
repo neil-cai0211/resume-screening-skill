@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from rubric import evaluate, load_profile, read_json, route_role
+from rubric import evaluate, load_profile, route_role
+from score_codex import score
 from workflow import (SHANGHAI, acknowledge, authorize, in_window, ledger, load_route, preview,
                       queue, record, register, release_preview, reserve)
 
@@ -69,7 +70,7 @@ class ScreeningTests(unittest.TestCase):
     def command(self, *args, expect=0):
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/screen.py"), *map(str, args)],
-            encoding="utf-8", capture_output=True, env=os.environ)
+            encoding="utf-8", capture_output=True)
         self.assertEqual(result.returncode, expect, result.stderr)
         return result.stdout
 
@@ -85,16 +86,8 @@ class ScreeningTests(unittest.TestCase):
         self.assertEqual(task["revision"], first["revision"])
         prompt = self.command("--demo", "prompt", SALES, task["resume_text"])
         self.assertIn("日均外呼60通", prompt)
-        raw = self.work / "raw"
-        raw.mkdir()
-        event = {"type": "result", "result": json.dumps(sales_result(), ensure_ascii=False)}
-        (raw / "demo.stdout.txt").write_text(json.dumps(event), encoding="utf-8")
-        extracted = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/extract_result.py"), "demo"],
-            env={**os.environ, "WB_WORK": str(self.work), "WB_SESSION_DIR": "", "PYTHONUTF8": "1"},
-            capture_output=True, text=True, encoding="utf-8")
-        self.assertEqual(extracted.returncode, 0, extracted.stderr)
-        result = raw / "demo.result.json"
+        result = self.work / "codex-result.json"
+        result.write_text(json.dumps(sales_result(), ensure_ascii=False), encoding="utf-8")
         scored = json.loads(self.command(*demo, "record", SALES, "001", 1, result))
         self.assertEqual((scored["conclusion"], scored["total"]), ("推荐面试", 85))
         batch = json.loads(self.command(*demo, "preview", SALES, DELIVERY))
@@ -241,6 +234,24 @@ class ScreeningTests(unittest.TestCase):
             revised = preview(db, ws, self.sales, self.delivery)
             self.assertNotEqual(revised["batch"], batch["batch"])
             self.assertNotEqual(revised["approval_code"], batch["approval_code"])
+
+    def test_codex_adapter_uses_structured_response_and_checks_evidence(self):
+        result = self.work / "score.json"
+
+        def fake_codex(command, *, input, cwd, **kwargs):
+            self.assertIn("read-only", command)
+            self.assertIn("--ephemeral", command)
+            self.assertIn("日均外呼60通", input)
+            schema = json.loads(Path(command[command.index("--output-schema") + 1]).read_text(encoding="utf-8"))
+            self.assertEqual(set(schema["properties"]), {"scores", "checks", "comments"})
+            output = Path(command[command.index("--output-last-message") + 1])
+            output.write_text(json.dumps(sales_result(), ensure_ascii=False), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("score_codex.subprocess.run", side_effect=fake_codex):
+            total, conclusion = score(self.sales, SALES_TEXT, result, sys.executable, None, 30)
+        self.assertEqual((total, conclusion), (85, "推荐面试"))
+        self.assertEqual(json.loads(result.read_text(encoding="utf-8")), sales_result())
 
     def test_send_windows(self):
         schedule = self.delivery["schedule"]

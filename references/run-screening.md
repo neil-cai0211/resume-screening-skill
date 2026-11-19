@@ -7,8 +7,8 @@
 1. 将已启用且纳入本批的岗位传给 `python scripts/screen.py route PROFILE ... --signal 完整岗位名`。可重复提供可信投递信号，或用 `--role 岗位号` 显式指定。收到 `needs_confirmation` 时先确认归属。专用邮箱、投递文件夹可映射成岗位号。正文里的职位关键词不能代替投递元信息。
 2. 用只读邮箱连接器收取附件或处理指定本地目录。将一封邮件的每个附件分别登记。岗位内先匹配已核实的候选人编号，初次投递由运行方分配并保留编号。遇到同名或候选人归属冲突，核实后再继续。取原件并转 PDF，提取文本，去除联系方式、证件号和住址。有正文但缺原简历的投递可暂存在私有待补材料清单，取得 PDF 后再登记；单独执行旧 P001 入口时按原流程处理。扫描件须核查 OCR 质量。
 3. 执行 `python scripts/screen.py --work WORK register PROFILE 候选号 姓名 最近公司 简历.pdf 脱敏文本.txt --source 投递唯一标识`。同岗位重复附件返回 `duplicate`，编号不一致返回 `id_conflict`。同一编号的新内容创建下一版。未评分记录继续排队，旧版记录不进入新批次。
-4. 对 `python scripts/screen.py --work WORK queue PROFILE` 返回的评分条目，运行 `python scripts/screen.py prompt PROFILE 脱敏文本路径`，将提示词写成 UTF-8，保存到 `WB_WORK/prompts/{评估任务键}.prompt.txt`。评估任务键由队列给出，重试附加唯一后缀，避免拿到旧会话结果。调用现有 `python scripts/run_one.py 评估任务键`，然后用相同任务键运行 `python scripts/extract_result.py 评估任务键`。默认使用仓库原有 Workbuddy 运行参数，用户指定时遵从授权配置。模型不出分或结果缺证据时可精简输入或纠正 JSON，最多重试 3 次，仍失败就汇报，并保留待评分条目。
-5. 执行 `python scripts/screen.py --work WORK record PROFILE 候选号 简历版本 WB_WORK/raw/评估任务键.result.json`。脚本核对字段、分值与证据原句后计算总分和结论。只有本岗位当前简历、当前标准、结论为推荐的记录能进入新批次。模型判定依据和短评需做内容核对。评分只使用岗位确认的规则，门槛不足和材料缺失如实记录。
+4. 对 `python scripts/screen.py --work WORK queue PROFILE` 返回的评分条目，调用 `python scripts/score_codex.py PROFILE 脱敏文本路径 --output 私有评分结果.json`。该命令复用已登录的 Codex CLI 与当前模型配置。由 Codex 会话直接执行时，可用 `python scripts/screen.py prompt PROFILE 脱敏文本路径` 生成同一提示，按要求返回 JSON 并写入私有评分结果文件。模型不出分或结果缺证据时可纠正格式、精简输入后重试，最多 3 次，仍失败则保留待评分并汇报。
+5. 执行 `python scripts/screen.py --work WORK record PROFILE 候选号 简历版本 私有评分结果.json`。脚本核对字段、分值与证据原句后计算总分和结论。只有本岗位当前简历、当前标准、结论为推荐的记录能进入新批次。模型判定依据和短评需做内容核对。评分只使用岗位确认的规则，门槛不足和材料缺失如实记录。
 
 ## 预览和发送
 
