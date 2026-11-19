@@ -21,3 +21,6 @@ inbox/*
 prompts/
 raw/
 *.prompt.txt
+
+__pycache__/
+*.sqlite3*

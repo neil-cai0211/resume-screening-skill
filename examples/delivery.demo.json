@@ -1,0 +1,24 @@
+{
+  "role": "DEMO-SALES",
+  "channel": "dingtalk-dm",
+  "recipients": [
+    {
+      "id": "demo-only",
+      "label": "示例面试官",
+      "query": "示例面试官"
+    }
+  ],
+  "schedule": {
+    "timezone": "Asia/Shanghai",
+    "at": "17:30",
+    "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "window_minutes": 15
+  },
+  "first_sequence": 1
+}
