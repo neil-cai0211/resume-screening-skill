@@ -1,0 +1,196 @@
+{
+  "id": "P001",
+  "title": "后端研发经理",
+  "aliases": [
+    "后端开发经理",
+    "Backend Dev Manager"
+  ],
+  "version": "v4.7",
+  "status": "reference",
+  "sources": [
+    {
+      "type": "rubric",
+      "locator": "references/评分表.md",
+      "section": "门槛、第三至第五节、G2 与管理项补充"
+    },
+    {
+      "type": "profile",
+      "locator": "references/人才画像-整理版.md"
+    },
+    {
+      "type": "competency",
+      "locator": "references/技术审核-审核人.md"
+    }
+  ],
+  "references": [
+    "references/评分表.md",
+    "references/人才画像-整理版.md",
+    "references/技术审核-审核人.md"
+  ],
+  "dimensions": [
+    {
+      "id": "modernization",
+      "label": "存量改造",
+      "max": 9,
+      "instructions": "按评分表 3.1 T-改造档位"
+    },
+    {
+      "id": "consistency",
+      "label": "交易一致性",
+      "max": 7,
+      "instructions": "按评分表 3.1 T-一致性档位"
+    },
+    {
+      "id": "service",
+      "label": "服务治理",
+      "max": 6,
+      "instructions": "按评分表 3.1 T-治理档位"
+    },
+    {
+      "id": "coding",
+      "label": "写代码",
+      "max": 5,
+      "instructions": "按评分表 3.1 T-编码档位"
+    },
+    {
+      "id": "engineering",
+      "label": "工程治理",
+      "max": 3,
+      "instructions": "按评分表 3.1 T-工程档位"
+    },
+    {
+      "id": "education",
+      "label": "学历背景",
+      "max": 10,
+      "instructions": "按评分表 3.2"
+    },
+    {
+      "id": "industry",
+      "label": "行业经历",
+      "max": 15,
+      "instructions": "按评分表 3.3 行业基础分"
+    },
+    {
+      "id": "depth",
+      "label": "业务深度",
+      "max": 10,
+      "instructions": "按评分表 3.3 业务深度加分"
+    },
+    {
+      "id": "company",
+      "label": "目标公司",
+      "max": 25,
+      "instructions": "按评分表 3.4 取最高档"
+    },
+    {
+      "id": "management",
+      "label": "管理",
+      "max": 10,
+      "instructions": "按评分表 3.5 及管理项补充"
+    }
+  ],
+  "checks": [
+    {
+      "id": "freshness",
+      "label": "履历未更新",
+      "instructions": "最近一段明确截止早于 2025-10 且之后无新工作 → met；至今或截止不早于 2025-10 → unmet；无法判断 → unknown。",
+      "actions": {
+        "met": "待定（履历未更新）"
+      }
+    },
+    {
+      "id": "g2_five_years",
+      "label": "本科明确为五年",
+      "instructions": "明确可算出五年 → met；材料写明不属此情形 → unmet；无法判断 → unknown。按 P001 现行口径。",
+      "actions": {
+        "met": "不合适（本科5年疑专升本）"
+      }
+    },
+    {
+      "id": "g1",
+      "label": "工作 10 年及以上",
+      "instructions": "实习不算；起止不足标 unknown。",
+      "actions": {
+        "unmet": "不合适"
+      }
+    },
+    {
+      "id": "g2",
+      "label": "全日制本科及以上",
+      "instructions": "按评分表门槛和 G2 补充。",
+      "actions": {
+        "unmet": "不合适"
+      }
+    },
+    {
+      "id": "g3",
+      "label": "带过团队",
+      "instructions": "有直接证据即可，不设人数下限。",
+      "actions": {
+        "unmet": "不合适"
+      }
+    },
+    {
+      "id": "g4",
+      "label": "年龄门槛",
+      "instructions": "按评分表 G4，仅用明确材料，不按毕业年份推断；冲突记 unknown。",
+      "actions": {
+        "unmet": "不合适"
+      }
+    },
+    {
+      "id": "x1",
+      "label": "只会画架构图",
+      "instructions": "按人才画像的本项标准。明确命中 → met；有疑点但证据不足 → suspected；无命中 → unmet；不可判断 → unknown。",
+      "actions": {
+        "met": "不合适",
+        "suspected": "待定"
+      }
+    },
+    {
+      "id": "x2",
+      "label": "主张整套重写",
+      "instructions": "按人才画像的本项标准。明确命中 → met；有疑点但证据不足 → suspected；无命中 → unmet；不可判断 → unknown。",
+      "actions": {
+        "met": "不合适",
+        "suspected": "待定"
+      }
+    },
+    {
+      "id": "x3",
+      "label": "明确没碰过订单或支付",
+      "instructions": "按人才画像的本项标准。明确命中 → met；有疑点但证据不足 → suspected；无命中 → unmet；不可判断 → unknown。",
+      "actions": {
+        "met": "不合适",
+        "suspected": "待定"
+      }
+    },
+    {
+      "id": "x4",
+      "label": "仅新栈且不愿接手旧系统",
+      "instructions": "按评分表 X4，明确出现信号记 met，疑似记 suspected。",
+      "actions": {
+        "met": "待定",
+        "suspected": "待定"
+      }
+    }
+  ],
+  "zero_score_rule": {
+    "all_zero": [
+      "modernization",
+      "consistency"
+    ],
+    "outcome": "不合适",
+    "reason": "T-改造与 T-一致性均为 0 且总分达线，单独汇报"
+  },
+  "threshold": 55,
+  "output": {
+    "fields": [
+      "技能知识",
+      "过往履历匹配度",
+      "学历年龄"
+    ],
+    "include_total": false,
+    "instructions": "每栏一两句，只写简历证据。年龄缺失写「简历未写」，不要推算；按现行 P001 评语规范写学历。禁止写分数、评分代号、面试追问或存量改造/交易一致性待面试核实。"
+  }
+}
