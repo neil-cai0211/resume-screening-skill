@@ -20,4 +20,6 @@ python -m unittest discover -s tests -v
 
 测试使用虚构简历、评分和回执。真实运行由有权限的 Agent 调用邮箱、Codex、Ego Lite 和钉钉等本机能力。运行参数见 [config.example.md](config.example.md)。实际简历、投递来源、收件人和处理台账保存在私有工作区。
 
+真实环境已验证薪人薪事读取职位描述、招聘邮箱 PDF 的单份脱敏 Codex 试评与去重，以及钉钉内部群的虚构文字和 ZIP 送达回执。正式单聊送达在岗位首批预览获准后验收。
+
 现有 P001 定时任务执行口径见 [P001 v4.7](references/p001-workflow.md)。迁移到通用入口前，先按执行指南对照历史序号、未发批次和模拟结果。
