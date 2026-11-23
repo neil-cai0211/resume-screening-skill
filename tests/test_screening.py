@@ -103,6 +103,106 @@ class ScreeningTests(unittest.TestCase):
                      "--confirmation", "mock", expect=2)
         self.command("prompt", SALES, self.txt, expect=1)
 
+    def test_optional_bonus_ranks_only_candidates_who_pass_base_threshold(self):
+        config = json.loads(SALES.read_text(encoding="utf-8"))
+        config["threshold"] = 65
+        config["review_before_threshold"] = True
+        config["checks"][0]["actions"]["unknown"] = "待补材料"
+        config["dimensions"].append({
+            "id": "ai", "label": "AI 实践", "max": 10, "allowed_points": [0, 3, 6, 10],
+            "bonus": True, "instructions": "有明确的落地证据才加分",
+        })
+        path = self.work / "bonus.json"
+        path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+        profile = load_profile(path)
+
+        def assessment(results_points, bonus, gate="met"):
+            result = sales_result()
+            result["scores"]["results"]["points"] = results_points
+            result["scores"]["ai"] = {"points": bonus, "evidence": "整理客户需求" if bonus else ""}
+            if gate == "unknown":
+                result["checks"]["outbound"] = {"status": "unknown", "evidence": ""}
+            return result
+
+        self.assertEqual(evaluate(profile, SALES_TEXT, assessment(2, 10, "unknown"))["conclusion"], "待补材料")
+        with self.assertRaisesRegex(ValueError, "约定档位"):
+            evaluate(profile, SALES_TEXT, assessment(8, 7))
+
+        with ledger(self.work, demo=True) as (db, ws):
+            for candidate, results_points, bonus in (("001", 6, 0), ("002", 5, 10), ("003", 4, 10)):
+                self.pdf.write_bytes(minimal_pdf(f"fictional bonus candidate {candidate}"))
+                register(db, ws, profile, candidate, f"候选人{candidate}", "示例公司",
+                         self.pdf, self.txt, "demo-intake")
+                result = record(db, profile, candidate, 1, assessment(results_points, bonus))
+                self.assertEqual((result["total"], result["bonus"]), (60 + results_points, bonus))
+            batch = preview(db, ws, profile, self.delivery)
+        manifest = json.loads(Path(batch["manifest"]).read_text(encoding="utf-8"))
+        self.assertEqual([candidate["candidate"] for candidate in manifest["candidates"]], ["002", "001"])
+
+    def test_optional_bonus_can_count_toward_threshold_when_enabled(self):
+        config = json.loads(SALES.read_text(encoding="utf-8"))
+        config["threshold"] = 65
+        config["bonus_counts_toward_threshold"] = True
+        config["review_before_threshold"] = True
+        config["checks"][0]["actions"] = {"unknown": "待补材料", "unmet": "不合适"}
+        config["dimensions"].append({
+            "id": "ai", "label": "AI 实践", "max": 10, "bonus": True, "instructions": "按产出评分",
+        })
+        path = self.work / "combined.json"
+        path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+        profile = load_profile(path)
+        result = sales_result()
+        result["scores"]["results"]["points"] = 2
+        result["scores"]["ai"] = {"points": 3, "evidence": "整理客户需求"}
+        scored = evaluate(profile, SALES_TEXT, result)
+        self.assertEqual((scored["total"], scored["bonus"], scored["screening_score"]), (62, 3, 65))
+        self.assertEqual(scored["conclusion"], "推荐面试")
+        result["scores"]["results"]["points"] = 1
+        self.assertEqual(evaluate(profile, SALES_TEXT, result)["conclusion"], "不合适")
+        result["scores"]["ai"]["points"] = 10
+        result["checks"]["outbound"] = {"status": "unknown", "evidence": ""}
+        self.assertEqual(evaluate(profile, SALES_TEXT, result)["conclusion"], "待补材料")
+        result["checks"]["outbound"] = {"status": "unmet", "evidence": "在示例公司做电话销售"}
+        self.assertEqual(evaluate(profile, SALES_TEXT, result)["conclusion"], "不合适")
+
+    def test_original_resume_stays_in_approved_storage(self):
+        config = json.loads(SALES.read_text(encoding="utf-8"))
+        restricted = self.work / "restricted"
+        restricted.mkdir()
+        config["status"] = "approved"
+        config["approval"] = {"by": "测试负责人", "at": "2026-11-23", "record": "虚构试评"}
+        config["original_resume"] = {"restricted_root": str(restricted), "approval_record": "虚构授权"}
+        config_path = self.work / "approved.json"
+        config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+
+        original = SALES_TEXT + " 仅测试的邮箱 candidate@example.test。"
+        self.txt.write_text(original, encoding="utf-8")
+        relative_text = restricted / "resume.txt"
+        relative_text.write_text(original, encoding="utf-8")
+        pdf = restricted / "resume.pdf"
+        pdf.write_bytes(self.pdf.read_bytes())
+        result_path = restricted / "result.json"
+        result = sales_result()
+        result_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        args = ("--work", restricted)
+        self.command(*args, "register", config_path, "001", "候选人甲", "示例公司", pdf,
+                     self.txt, "--source", "demo", expect=1)
+        self.command(*args, "register", config_path, "001", "候选人甲", "示例公司", pdf,
+                     relative_text, "--source", "demo")
+        result_output = self.command(*args, "record", config_path, "001", 1, result_path)
+        self.assertEqual(json.loads(result_output)["conclusion"], "推荐面试")
+        self.assertNotIn("evidence", result_output)
+        self.command("prompt", config_path, relative_text, expect=1)
+
+        profile = load_profile(config_path)
+        with patch("score_codex.subprocess.run") as subprocess_run:
+            with self.assertRaisesRegex(ValueError, "受限目录"):
+                score(profile, original, self.work / "out.json", sys.executable, None, 30)
+            subprocess_run.assert_not_called()
+        result["scores"]["outreach"]["evidence"] = "candidate@example.test"
+        with self.assertRaisesRegex(ValueError, "联系方式"):
+            evaluate(profile, original, result)
+
     def test_legacy_p001_decisions_and_summary(self):
         profile = load_profile(P001)
         text = "最近一段工作至今。负责订单和支付改造。带过六人小组。本科起止可算出四年。"
@@ -252,6 +352,13 @@ class ScreeningTests(unittest.TestCase):
             total, conclusion = score(self.sales, SALES_TEXT, result, sys.executable, None, 30)
         self.assertEqual((total, conclusion), (85, "推荐面试"))
         self.assertEqual(json.loads(result.read_text(encoding="utf-8")), sales_result())
+
+    def test_multiple_daily_send_windows(self):
+        schedule = {"timezone": "Asia/Shanghai", "at": ["09:30", "18:30"],
+                    "weekdays": list(range(1, 8)), "window_minutes": 15}
+        self.assertTrue(in_window(schedule, dt.datetime(2026, 11, 22, 9, 30, tzinfo=SHANGHAI)))
+        self.assertTrue(in_window(schedule, dt.datetime(2026, 11, 22, 18, 30, tzinfo=SHANGHAI)))
+        self.assertFalse(in_window(schedule, dt.datetime(2026, 11, 22, 14, 0, tzinfo=SHANGHAI)))
 
     def test_send_windows(self):
         schedule = self.delivery["schedule"]

@@ -11,7 +11,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from rubric import ROOT, PROFILE_ID, canonical, digest, evaluate, read_json, require, safe_text
+from rubric import (ROOT, PROFILE_ID, canonical, digest, evaluate, read_json, require,
+                    require_resume_storage, safe_text, validate_resume_text)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS submissions (
@@ -69,8 +70,9 @@ def file_part(value):
 
 def register(db, workspace, profile, candidate, name, employer, pdf, resume_text, source):
     require(PROFILE_ID.fullmatch(candidate), "候选人编号无效")
+    require_resume_storage(profile, workspace, pdf, resume_text)
     resume = Path(resume_text).read_text(encoding="utf-8-sig")
-    safe_text(resume, "脱敏简历")
+    validate_resume_text(profile, resume)
     raw = Path(pdf).read_bytes()
     require(raw.startswith(b"%PDF-"), "推荐包只接收 PDF，请先转换并核对")
     sha = hashlib.sha256(raw).hexdigest()
@@ -105,7 +107,9 @@ def get_current(db, role, candidate, revision):
 def record(db, profile, candidate, revision, result):
     row = get_current(db, profile["id"], candidate, revision)
     require(row["batch"] is None, "该版本已打包，评分记录随批次冻结")
-    resume = (Path(row["directory"]) / "resume.txt").read_text(encoding="utf-8")
+    resume_path = Path(row["directory"]) / "resume.txt"
+    require_resume_storage(profile, resume_path)
+    resume = resume_path.read_text(encoding="utf-8")
     result = evaluate(profile, resume, result)
     db.execute("UPDATE submissions SET evaluation=? WHERE role=? AND candidate=? AND revision=?",
                (canonical(result), profile["id"], candidate, revision))
@@ -125,9 +129,13 @@ def load_route(path, profile, demo):
     require(len({recipient["id"] for recipient in recipients}) == len(recipients), "面试官重复")
     route["recipients"] = sorted(recipients, key=lambda recipient: recipient["id"])
     schedule = route.get("schedule", {})
+    times = schedule.get("at")
+    times = [times] if isinstance(times, str) else times
     require(schedule.get("timezone") == "Asia/Shanghai"
-            and isinstance(schedule.get("at"), str)
-            and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", schedule["at"])
+            and isinstance(times, list) and times
+            and all(isinstance(value, str) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value)
+                    for value in times)
+            and len(set(times)) == len(times)
             and type(schedule.get("window_minutes")) is int
             and 0 <= schedule["window_minutes"] <= 60
             and isinstance(schedule.get("weekdays"), list) and schedule["weekdays"]
@@ -153,7 +161,10 @@ def render(profile, candidates, date, archive):
         for field in profile["output"]["fields"]:
             result.append(f"**{field}：** {evaluation['comments'][field]}")
         if profile["output"]["include_total"]:
-            result.append(f"**总分：** {evaluation['total']}")
+            if "bonus" in evaluation:
+                result.append(f"**基础分：** {evaluation['total']}（另加 {evaluation['bonus']} 分）")
+            else:
+                result.append(f"**总分：** {evaluation['total']}")
     return "\n\n".join(result) + "\n"
 
 
@@ -168,17 +179,24 @@ def preview(db, workspace, profile, route):
         """, (role,)).fetchall()
     next_row = db.execute("SELECT next FROM numbering WHERE role=?", (role,)).fetchone()
     sequence = next_row[0] if next_row else route.get("first_sequence", 1)
-    candidates = []
+    eligible = []
     for row in rows:
         evaluation = json.loads(row["evaluation"])
         if (evaluation["conclusion"] == "推荐面试"
                 and evaluation["rubric_fingerprint"] == profile["fingerprint"]):
-            number = f"{sequence:03}"
-            candidates.append({"candidate": row["candidate"], "revision": row["revision"],
-                               "name": row["name"], "sequence": number, "evaluation": evaluation,
-                               "filename": f"{number}_{row['name']}_{row['employer']}.pdf",
-                               "pdf": str(Path(row["directory"]) / "resume.pdf"), "sha": row["sha"]})
-            sequence += 1
+            eligible.append((row, evaluation))
+    if any("bonus" in evaluation for _, evaluation in eligible):
+        eligible.sort(key=lambda entry: (entry[1]["total"] + entry[1]["bonus"], entry[1]["total"]),
+                      reverse=True)
+
+    candidates = []
+    for row, evaluation in eligible:
+        number = f"{sequence:03}"
+        candidates.append({"candidate": row["candidate"], "revision": row["revision"],
+                           "name": row["name"], "sequence": number, "evaluation": evaluation,
+                           "filename": f"{number}_{row['name']}_{row['employer']}.pdf",
+                           "pdf": str(Path(row["directory"]) / "resume.pdf"), "sha": row["sha"]})
+        sequence += 1
     if not candidates:
         return {"status": "empty"}
     date = dt.datetime.now(SHANGHAI).date()
@@ -244,10 +262,15 @@ def authorize(db, profile, route, batch, code, approval_record):
 
 
 def in_window(schedule, now):
-    expected = dt.datetime.combine(now.date(), dt.time.fromisoformat(schedule["at"]), tzinfo=now.tzinfo)
-    return now.isoweekday() in schedule["weekdays"] and (
-        abs((now - expected).total_seconds()) <= 60 * schedule["window_minutes"])
-
+    if now.isoweekday() not in schedule["weekdays"]:
+        return False
+    at = schedule["at"]
+    times = [at] if isinstance(at, str) else at
+    for value in times:
+        expected = dt.datetime.combine(now.date(), dt.time.fromisoformat(value), tzinfo=now.tzinfo)
+        if abs((now - expected).total_seconds()) <= 60 * schedule["window_minutes"]:
+            return True
+    return False
 
 def reserve(db, profile, route, batch, recipient, part, manual_record):
     row, manifest = verified_batch(db, profile, route, batch)
