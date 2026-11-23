@@ -7,7 +7,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from rubric import canonical, load_profile, make_prompt, read_json, route_role
+from rubric import canonical, load_profile, make_prompt, read_json, require, require_resume_storage, route_role
 from workflow import (acknowledge, authorize, delivery_status, ledger, load_route,
                       preview, queue, record, register, release_preview, reserve, role_allowed)
 
@@ -79,10 +79,13 @@ def main():
         profile = load_profile(args.profile)
         role_allowed(profile, args.demo)
     if operation == "prompt":
+        require(not profile.get("original_resume"), "原始简历请走私有评分入口，避免在终端输出原文")
         print(make_prompt(profile, Path(args.resume_text).read_text(encoding="utf-8-sig")), end="")
         return None
     if not args.work:
         parser.error("--work is required for this command")
+    if profile:
+        require_resume_storage(profile, args.work)
     if args.demo and operation in {"authorize", "reserve", "ack"}:
         parser.error("demo workspace does not permit sending")
     route_config = (load_route(args.delivery_config, profile, args.demo)
@@ -94,7 +97,12 @@ def main():
             return register(db, workspace, profile, args.candidate, args.name, args.employer,
                             args.pdf, args.resume_text, args.source)
         if operation == "record":
-            return record(db, profile, args.candidate, args.revision, read_json(args.result))
+            require_resume_storage(profile, args.result)
+            evaluation = record(db, profile, args.candidate, args.revision, read_json(args.result))
+            if profile.get("original_resume"):
+                fields = ("role", "version", "total", "bonus", "screening_score", "conclusion", "reason")
+                return {key: evaluation[key] for key in fields if key in evaluation}
+            return evaluation
         if operation == "preview":
             return preview(db, workspace, profile, route_config)
         if operation == "authorize":

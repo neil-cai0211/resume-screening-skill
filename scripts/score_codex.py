@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score one sanitized resume with the signed-in Codex CLI."""
+"""Score one resume in the approved workspace with the signed-in Codex CLI."""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from rubric import ROOT, STATUSES, evaluate, load_profile, make_prompt, require
+from rubric import ROOT, STATUSES, evaluate, load_profile, make_prompt, require, require_resume_storage
 
 
 def object_schema(properties):
@@ -33,6 +33,7 @@ def response_schema(profile):
 def score(profile, resume, output, cli, model, timeout):
     prompt = "只使用下方提供的材料，整个评分过程中无需调用工具。\n\n" + make_prompt(profile, resume)
     output = Path(output).resolve()
+    require_resume_storage(profile, output)
     require(not output.is_relative_to(ROOT), "评分输出必须存放在发布仓库外")
     require(not output.exists(), "评分结果已存在，重试请使用新的文件名")
     executable = shutil.which(cli)
@@ -75,6 +76,7 @@ def main():
     try:
         require(args.timeout > 0, "超时秒数必须为正数")
         profile = load_profile(args.profile)
+        require_resume_storage(profile, args.resume_text, args.output)
         resume = Path(args.resume_text).read_text(encoding="utf-8-sig")
         total, conclusion = score(profile, resume, args.output, args.cli, args.model, args.timeout)
         print(json.dumps({"total": total, "conclusion": conclusion}, ensure_ascii=False))
